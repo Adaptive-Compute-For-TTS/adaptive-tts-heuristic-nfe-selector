@@ -1,6 +1,6 @@
 # Deterministic NFE selector (demo MVP)
 
-Owner: Rababb | Target: Oct 23, 2026
+Owner: Rababb |
 
 This is a **prompt-to-NFE heuristic**, not a trained optimal-NFE model.
 It runs entirely on CPU, needs no dependencies beyond Python 3.10+, and does not modify dots.tts or its Euler executor.
