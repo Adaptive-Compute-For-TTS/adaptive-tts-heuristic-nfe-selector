@@ -2,7 +2,48 @@
 
 Owner: Rababb
 
-This is a **demo heuristic** (not a trained model, nor a validated optimal-NFE predictor). It preserves the existing API: `select_nfe(prompt)` returns exactly `{ "nfe": int, "reason": str }`, using only Python's standard library.
+This selector chooses an NFE (number of function evaluations) setting for the WatAI Adaptive TTS demo.
+
+## Quick Start
+
+**What it does:** `nfe_selector.py` is a deterministic prompt-level heuristic that selects **NFE 4, 20, or 32** based on text complexity. The same prompt always gives the same result. It does not generate audio itself.
+
+**Requirements:** Python 3.10+. The selector and its tests need no external libraries. Generating speech also requires dots.tts and the WatAI executor integration.
+
+**Use the selector:** Run Python from the folder containing `nfe_selector.py`:
+
+```python
+from nfe_selector import select_nfe
+
+result = select_nfe("Hello, how are you?")
+print(result)
+# {"nfe": 4, "reason": "..."}
+```
+
+It returns exactly `{"nfe": int, "reason": str}`: the selected NFE and a short explanation.
+
+**Generate speech:** Call `select_nfe(prompt)` once before generating speech. Pass `result["nfe"]` to the existing WatAI fixed-NFE executor, which applies that same NFE independently to every generated audio patch.
+
+With your existing WatAI TTS `runtime` already initialized:
+
+```python
+from nfe_selector import select_nfe
+from adaptive_nfe.fixed_nfe import generate_fixed_nfe
+
+prompt = "Hello, how are you?"
+result = select_nfe(prompt)
+audio_result = generate_fixed_nfe(
+    runtime, nfe=result["nfe"], text=prompt, guidance_scale=1.2
+)
+```
+
+**Run tests:** From this repository folder:
+
+```bash
+python -m unittest -v
+```
+
+**Limitations:** This is a demo heuristic, not a trained model or a scientifically validated optimal-NFE predictor. See the detailed rules, examples, and limitations below.
 
 ## Decision rules
 
