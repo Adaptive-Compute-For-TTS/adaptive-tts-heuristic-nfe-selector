@@ -1,5 +1,7 @@
 # WatAI Adaptive TTS: deterministic prompt-level NFE selector
 
+Owner: Rababb
+
 This is a **demo heuristic** (not a trained model, nor a validated optimal-NFE predictor). It preserves the existing API: `select_nfe(prompt)` returns exactly `{ "nfe": int, "reason": str }`, using only Python's standard library.
 
 ## Decision rules
