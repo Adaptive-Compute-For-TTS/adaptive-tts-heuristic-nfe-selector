@@ -1,60 +1,76 @@
-# Deterministic NFE selector (demo MVP)
+# WatAI Adaptive TTS: deterministic prompt-level NFE selector
 
-Owner: Rababb | Target: Oct 23, 2026
+This is a **demo heuristic** (not a trained model, nor a validated optimal-NFE predictor). It preserves the existing API: `select_nfe(prompt)` returns exactly `{ "nfe": int, "reason": str }`, using only Python's standard library.
 
-This is a **prompt-to-NFE heuristic**, not a trained optimal-NFE model.
-It runs entirely on CPU, needs no dependencies beyond Python 3.10+, and does not modify dots.tts or its Euler executor.
+## Decision rules
 
-## Contract
+The checks run in this order:
+
+1. Missing, blank, or non-word input: **NFE 20** fallback.
+2. **NFE 32** for a very long prompt: **40+ words**.
+3. **NFE 32** for a long prompt with at least one numeric expression or uppercase acronym: **25+ words**, plus a marker.
+4. **NFE 32** for a medium-or-long prompt with many such markers: **18+ words**, plus **3 or more** numeric/acronym indicators.
+5. **NFE 4** for a short straightforward-looking prompt: **8 or fewer words**, ASCII letters/basic punctuation only, no digits/acronyms.
+6. Everything else: **NFE 20** default.
+
+An indicator is a numeric expression (such as `12.5`, `555-0147`, `Q4`) or an uppercase acronym of at least two letters (such as `GPU` or `NASA`). An unusual name without ASCII spelling, symbols, or unexplained input goes to the default unless another high-complexity rule applies.
+
+The NFE values 4, 20, and 32 match the existing demo benchmarks. **The thresholds are intentionally illustrative.** Existing WatAI WER and signal-check benchmarks have not demonstrated that numbers, acronyms, or long prompts inherently require NFE 32; in particular, the prior long-prompt generation data were truncated. We retain NFE 32 for unusually complex demo cases, not because it is scientifically optimal.
+
+## Usage
 
 ```python
 from nfe_selector import select_nfe
 
-selection = select_nfe("Hello, how are you?")
-# {"nfe": 4, "reason": "Easy: short prompt (4 words)"}
+selection = select_nfe("The kettle is already on the stove.")
+# {'nfe': 4, 'reason': 'Low complexity: short straightforward phrase (7 words)'}
 
-# Tony's runner passes `selection["nfe"]` to the existing executor once.
-# Yulchan's executor keeps that same value for every generation patch.
+selection = select_nfe("The CEO joined the call at noon.")
+# NFE 20, since an acronym alone does not trigger 32
+
+selection = select_nfe(
+    "Our GPU cluster runs CUDA 12, and the ML team wants an API "
+    "endpoint for the TTS model by Q4."
+)
+# NFE 32, due to multiple markers and a medium/long prompt
 ```
 
-Returns **exactly** `{ "nfe": int, "reason": str }`.
-
-## Demo rules
-
-Rules are evaluated in order:
-
-1. Empty/invalid or non-word input -> fallback NFE **20**.
-2. Contains any digit -> NFE **32**.
-3. Contains an all-uppercase acronym (2+ letters) -> NFE **32**.
-4. At least 25 words -> NFE **32**.
-5. At most 8 words -> NFE **4**.
-6. Otherwise -> NFE **20**.
-
-The steps are deliberately from the team's planned NFE 4/20/32 benchmark set.
-**Higher word count, numbers, or acronyms do not scientifically imply that higher NFE will improve speech.** These are illustrative routing rules pending audio-quality evaluation. In particular, NFE 4 may generate unacceptable audio in some cases; confirm against the actual WAVs and scores before treating it as safe.
-
-## CLI
-
-From the repository root (if this directory is at repo root):
+CLI usage:
 
 ```bash
-python Adaptive-Compute-For-TTS/nfe_selector.py "Hello, how are you?"
-# {"nfe": 4, "reason": "Easy: short prompt (4 words)"}
-
-python Adaptive-Compute-For-TTS/nfe_selector.py
-# {"nfe": 20, "reason": "Fallback: missing or invalid prompt"}
+python nfe_selector.py "Hello, how are you?"
 ```
 
-## Tests
+## Integration
+
+Call `select_nfe(prompt)` **once per utterance**, before TTS generation. Pass the selected integer into the existing fixed-NFE runner, which applies that NFE value independently to **every generated audio patch**. Do not reselect for each patch in this demo.
+
+For example:
+
+```python
+from nfe_selector import select_nfe
+from adaptive_nfe.fixed_nfe import generate_fixed_nfe
+
+choice = select_nfe(prompt)
+result = generate_fixed_nfe(runtime, nfe=choice["nfe"], text=prompt, guidance_scale=1.2)
+print(choice["nfe"], choice["reason"])
+```
+
+The `adaptive_nfe` dependency is only needed for the integration example above, not for running the selector or tests.
+
+## Test locally
+
+From the folder containing both `.py` files:
 
 ```bash
-python -m unittest discover -s Adaptive-Compute-For-TTS -p 'test_*.py' -v
+python -m unittest -v
 ```
 
-Covers three different prompt classes, fallback, determinism, length boundaries, and acronyms.
+The test suite covers all three tiers, the old API, empty input, length boundaries, combined complexity rules, and deterministic selection.
 
-## Integration note
+## Important limitations
 
-Keep `nfe_selector.py` importable by the caller, for example in the same directory as Tony's runner or with this directory on `PYTHONPATH`. Call `select_nfe(prompt)` **once per generation**, then pass the returned `nfe` into the existing runner/executor unchanged for all patches. Log `nfe` and `reason` with the run ID; do not choose a new NFE for each patch.
-
-No GitHub pushes, commits, backend wiring, or GPU inference are included in this standalone deliverable.
+- The current WatAI benchmark supports that low NFE is faster, but it does **not** prove any rule here is quality optimal.
+- WER alone cannot assess speaker similarity, prosody, or perceived naturalness.
+- The heuristic does not execute dots.tts, calculate per-patch difficulty, or change its existing Euler executor.
+- No GitHub modifications are part of this deliverable.
